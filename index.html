@@ -195,6 +195,21 @@ h1.topic-title{
   border-radius:8px;padding:12px 14px;margin:12px 0;font-size:.9rem;line-height:1.5;
 }
 .errore.show{display:block}
+/* ---------- home argomento ---------- */
+.intro-domanda{color:var(--grigio);line-height:1.6;margin-bottom:2px}
+.big-actions{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0 4px}
+.big-actions .btn{font-size:1rem;padding:14px 20px}
+.sezione{margin-top:22px;border-top:2px dashed var(--quadretto);padding-top:16px}
+.sezione h3{font-family:'Bricolage Grotesque';font-weight:700;font-size:1.05rem;color:var(--biro-scuro);margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.sezione p.sub{color:var(--grigio);font-size:.88rem;margin-bottom:12px;line-height:1.5}
+.mio-card{border:1.5px solid var(--quadretto);border-radius:8px;background:var(--carta);padding:12px 14px;margin-bottom:10px;display:flex;gap:10px;align-items:flex-start}
+.mio-card .testo{flex:1;line-height:1.5;font-size:.95rem;white-space:pre-wrap}
+.mio-card .azioni{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+.mini-form{border:1.5px dashed var(--biro);border-radius:8px;padding:14px;margin-top:10px;background:#fff}
+.mini-form textarea,.mini-form input{width:100%;border:1.5px solid var(--quadretto);border-radius:8px;padding:10px 12px;font-family:'Figtree';font-size:.95rem;background:var(--carta);margin-bottom:8px}
+.mini-form textarea{min-height:70px;resize:vertical}
+.vuoto{color:var(--grigio);font-size:.9rem;font-style:italic;margin-bottom:8px}
+.lezione-testo{line-height:1.75;white-space:pre-wrap;font-size:1.02rem;margin:8px 0}
 /* ---------- mobile ---------- */
 .mobile-topic-bar{display:none}
 @media (max-width:820px){
@@ -237,10 +252,9 @@ h1.topic-title{
       <p>Qui dentro c'è <strong>tutto il programma</strong>: dalle divisioni in colonna fino alla matematica finanziaria che ti servirà per l'AFM.</p>
       <p>Come funziona:</p>
       <p>① Scegli un argomento dall'elenco<br>
-         ② Il tutor ti genera un esercizio — prova a risolverlo da solo<br>
-         ③ Scrivi la risposta e verifica<br>
-         ④ Guarda la soluzione spiegata passo per passo<br>
-         ⑤ Se un passaggio non ti torna, premi <strong>"Non ho capito"</strong>: il tutor torna indietro e ti spiega il concetto ancora più di base, quante volte serve.</p>
+         ② Decidi tu: <strong>📖 lezione</strong> per farti spiegare l'argomento, oppure <strong>✏️ esercizio</strong> per allenarti subito<br>
+         ③ Puoi anche <strong>aggiungere i tuoi esercizi</strong> (del libro o dei compiti) e farteli risolvere passo per passo<br>
+         ④ Se un passaggio non ti torna, premi <strong>"Non ho capito"</strong>: il tutor torna indietro e te lo spiega ancora più di base, quante volte serve.</p>
       <p style="margin-top:14px"><em>Prima di iniziare, inserisci la tua chiave API nelle Impostazioni (in alto a destra).</em></p>
     </div>
     <div id="workArea"></div>
@@ -320,12 +334,19 @@ const stato = {
   apiKey: localStorage.getItem('q_apiKey') || '',
   model: localStorage.getItem('q_model') || 'claude-sonnet-4-6',
   progresso: JSON.parse(localStorage.getItem('q_progresso') || '{}'),
+  miei: JSON.parse(localStorage.getItem('q_miei') || '{}'), // {temaId:[{id,testo,risposta}]}
   temaId: null, temaNome: null,
+  modo: null,                // 'tema' | 'mio' | 'alvolo'
   esercizio: null,           // {testo, risposta, passi:[{titolo,contenuto}]}
+  esercizioTitolo: null,
+  lezione: null,
+  contesto: '',              // contesto per la chat col tutor
   chat: []                   // cronologia domande libere
 };
 function salvaProgresso(){ localStorage.setItem('q_progresso', JSON.stringify(stato.progresso)); }
+function salvaMiei(){ localStorage.setItem('q_miei', JSON.stringify(stato.miei)); }
 function prog(id){ if(!stato.progresso[id]) stato.progresso[id]={fatti:0,giusti:0,serie:0}; return stato.progresso[id]; }
+function mieiDi(id){ if(!stato.miei[id]) stato.miei[id]=[]; return stato.miei[id]; }
 
 /* ================= API ================= */
 async function chiamaClaude(messages, system, maxTokens){
@@ -368,7 +389,10 @@ function difficolta(id){
   return "medio";
 }
 async function generaEsercizio(){
+  stato.modo = 'tema';
+  stato.esercizioTitolo = stato.temaNome;
   const area = document.getElementById('workArea');
+  document.getElementById('welcome').style.display = "none";
   mostraCaricamento(area, "Il tutor sta scrivendo l'esercizio...");
   try{
     const risposta = await chiamaClaude([{role:"user", content:
@@ -387,7 +411,6 @@ Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, senza backti
 I passi devono essere in stile Photomath: uno per ogni singola operazione o ragionamento, numerabili, mai passi giganti che saltano pezzi. Minimo 3 passi, anche per esercizi facili.`}],
     SISTEMA_BASE, 3000);
     stato.esercizio = estraiJSON(risposta);
-    stato.chat = [];
     renderEsercizio();
   }catch(err){ mostraErrore(area, err.message); }
 }
@@ -449,6 +472,8 @@ function renderEsercizio(){
   const e = stato.esercizio;
   const area = document.getElementById('workArea');
   document.getElementById('welcome').style.display = "none";
+  stato.chat = [];
+  stato.contesto = `L'esercizio in corso è: "${e.testo}" (soluzione: ${e.risposta}). I passaggi della soluzione sono: ${e.passi.map((p,i)=>`(${i+1}) ${p.titolo}: ${p.contenuto}`).join(" ")}`;
   let passiHtml = "";
   e.passi.forEach((p,i)=>{
     passiHtml += `
@@ -467,7 +492,7 @@ function renderEsercizio(){
   area.innerHTML = `
   <div class="pagina">
     <div class="eyebrow">Esercizio</div>
-    <h1 class="topic-title">${esc(stato.temaNome)}</h1>
+    <h1 class="topic-title">${esc(stato.esercizioTitolo || stato.temaNome)}</h1>
     <div class="exercise-text">${esc(e.testo)}</div>
     <div class="answer-row">
       <input type="text" id="answerInput" placeholder="Scrivi qui la tua risposta..." autocomplete="off">
@@ -486,7 +511,8 @@ function renderEsercizio(){
         </div>
       </div>
       <div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap">
-        <button class="btn btn-blu" onclick="generaEsercizio()">➜ Prossimo esercizio</button>
+        <button class="btn btn-blu" onclick="generaEsercizio()">➜ Nuovo esercizio dal tutor</button>
+        <button class="btn btn-ghost" onclick="mostraHomeArgomento()">⬅️ Torna all'argomento</button>
       </div>
     </div>
   </div>`;
@@ -545,9 +571,7 @@ async function inviaDomanda(){
   log.appendChild(load);
   stato.chat.push({role:"user", content:domanda});
   try{
-    const contesto = `L'esercizio in corso è: "${stato.esercizio.testo}" (soluzione: ${stato.esercizio.risposta}).
-I passaggi della soluzione sono: ${stato.esercizio.passi.map((p,i)=>`(${i+1}) ${p.titolo}: ${p.contenuto}`).join(" ")}
-Rispondi alle domande dello studente su questo esercizio in modo breve, chiaro e colloquiale. Testo puro, massimo 10 righe.`;
+    const contesto = stato.contesto + "\nRispondi alle domande dello studente in modo breve, chiaro e colloquiale. Testo puro, massimo 10 righe.";
     const risposta = await chiamaClaude(stato.chat, SISTEMA_BASE + "\n\n" + contesto, 1200);
     stato.chat.push({role:"assistant", content:risposta});
     load.remove();
@@ -557,6 +581,160 @@ Rispondi alle domande dello studente su questo esercizio in modo breve, chiaro e
     load.remove();
     log.insertAdjacentHTML('beforeend', `<div class="msg tutor">⚠️ ${esc(err.message)}</div>`);
   }
+}
+
+/* ================= HOME ARGOMENTO ================= */
+function mostraHomeArgomento(){
+  const area = document.getElementById('workArea');
+  document.getElementById('welcome').style.display = "none";
+  const lista = mieiDi(stato.temaId);
+  let mieiHtml;
+  if(lista.length === 0){
+    mieiHtml = `<p class="vuoto">Non hai ancora aggiunto esercizi tuoi per questo argomento.</p>`;
+  }else{
+    mieiHtml = lista.map(ex=>`
+      <div class="mio-card">
+        <div class="testo">${esc(ex.testo)}${ex.risposta ? `<br><small style="color:var(--grigio)">La tua risposta: ${esc(ex.risposta)}</small>` : ''}</div>
+        <div class="azioni">
+          <button class="btn btn-blu btn-piccolo" onclick="rifaiMio('${ex.id}')">▶ Rifai</button>
+          <button class="btn btn-ghost btn-piccolo" onclick="eliminaMio('${ex.id}')">🗑</button>
+        </div>
+      </div>`).join("");
+  }
+  area.innerHTML = `
+  <div class="pagina">
+    <div class="eyebrow">Argomento</div>
+    <h1 class="topic-title">${esc(stato.temaNome)}</h1>
+    <p class="intro-domanda">Cosa vuoi fare?</p>
+    <div class="big-actions">
+      <button class="btn btn-blu" onclick="generaLezione()">📖 Spiegami la lezione</button>
+      <button class="btn btn-ghost" onclick="generaEsercizio()">✏️ Fai un esercizio</button>
+    </div>
+
+    <div class="sezione">
+      <h3>➕ I tuoi esercizi</h3>
+      <p class="sub">Aggiungi gli esercizi del libro o dei compiti: restano salvati e li puoi rifare quando vuoi. Il tutor ti mostrerà la soluzione passo per passo.</p>
+      <div id="mieiLista">${mieiHtml}</div>
+      <button class="btn btn-ghost btn-piccolo" id="btnAddMio" onclick="document.getElementById('formMio').style.display='block'; this.style.display='none'">➕ Aggiungi un esercizio</button>
+      <div class="mini-form" id="formMio" style="display:none">
+        <textarea id="mioTesto" placeholder="Scrivi qui il testo dell'esercizio..."></textarea>
+        <input type="text" id="mioRisposta" placeholder="Risposta (facoltativa, se la conosci)">
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-blu btn-piccolo" onclick="aggiungiMio()">Salva</button>
+          <button class="btn btn-ghost btn-piccolo" onclick="document.getElementById('formMio').style.display='none'; document.getElementById('btnAddMio').style.display='inline-flex'">Annulla</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sezione">
+      <h3>⚡ Risolvi un esercizio al volo</h3>
+      <p class="sub">Incolla un esercizio qualsiasi (solo testo) e il tutor te lo risolve subito, senza salvarlo.</p>
+      <div class="mini-form">
+        <textarea id="alVoloTesto" placeholder="Incolla qui l'esercizio da risolvere..."></textarea>
+        <button class="btn btn-blu btn-piccolo" onclick="risolviAlVolo()">Risolvi</button>
+      </div>
+    </div>
+  </div>`;
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+/* ================= LEZIONE ================= */
+async function generaLezione(){
+  const area = document.getElementById('workArea');
+  document.getElementById('welcome').style.display = "none";
+  mostraCaricamento(area, "Il tutor sta preparando la lezione...");
+  try{
+    const risposta = await chiamaClaude([{role:"user", content:
+`Fai una LEZIONE chiara e completa sull'argomento: "${stato.temaNome}", per uno studente che parte da zero.
+Struttura la lezione così, in testo puro (niente JSON, niente markdown con asterischi):
+- Comincia con "A cosa serve": perché questo argomento è utile, con un esempio di vita reale.
+- Poi "Come funziona": spiega il concetto dalle basi, con parole semplici.
+- Inserisci 1 o 2 esempi svolti passo per passo con numeri piccoli.
+- Chiudi con "Da ricordare": 2-4 punti chiave.
+Usa notazione semplice in testo puro (² ³ per le potenze, √ per le radici, × e ÷, le frazioni come a/b). Massimo 40 righe.`}],
+    SISTEMA_BASE, 2500);
+    stato.lezione = risposta;
+    renderLezione();
+  }catch(err){ mostraErrore(area, err.message); }
+}
+function renderLezione(){
+  const area = document.getElementById('workArea');
+  stato.chat = [];
+  stato.contesto = `Stai facendo lezione sull'argomento "${stato.temaNome}". Testo della lezione: ${stato.lezione}`;
+  area.innerHTML = `
+  <div class="pagina">
+    <div class="eyebrow">Lezione</div>
+    <h1 class="topic-title">${esc(stato.temaNome)}</h1>
+    <div class="lezione-testo">${esc(stato.lezione)}</div>
+    <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn btn-blu" onclick="generaEsercizio()">✏️ Ora fai un esercizio</button>
+      <button class="btn btn-ghost" onclick="mostraHomeArgomento()">⬅️ Torna all'argomento</button>
+    </div>
+    <div class="chat-box">
+      <div class="eyebrow" style="margin-bottom:8px">Chiedi al tutor</div>
+      <div class="chat-log" id="chatLog"></div>
+      <div class="chat-row">
+        <input type="text" id="chatInput" placeholder="Fai una domanda sulla lezione...">
+        <button class="btn btn-blu" onclick="inviaDomanda()">Invia</button>
+      </div>
+    </div>
+  </div>`;
+  document.getElementById('chatInput').addEventListener('keydown', ev=>{ if(ev.key==='Enter') inviaDomanda(); });
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+/* ================= ESERCIZI PERSONALI ================= */
+function aggiungiMio(){
+  const testo = document.getElementById('mioTesto').value.trim();
+  if(!testo){ alert("Scrivi il testo dell'esercizio."); return; }
+  const risposta = document.getElementById('mioRisposta').value.trim();
+  mieiDi(stato.temaId).push({id: 'e'+Date.now(), testo, risposta});
+  salvaMiei();
+  mostraHomeArgomento();
+}
+function eliminaMio(id){
+  if(!confirm("Vuoi eliminare questo esercizio?")) return;
+  stato.miei[stato.temaId] = mieiDi(stato.temaId).filter(x=>x.id!==id);
+  salvaMiei();
+  mostraHomeArgomento();
+}
+function rifaiMio(id){
+  const ex = mieiDi(stato.temaId).find(x=>x.id===id);
+  if(!ex) return;
+  risolviTesto(ex.testo, ex.risposta, "Il tuo esercizio", 'mio');
+}
+function risolviAlVolo(){
+  const testo = document.getElementById('alVoloTesto').value.trim();
+  if(!testo){ alert("Incolla prima un esercizio."); return; }
+  risolviTesto(testo, '', "Esercizio al volo", 'alvolo');
+}
+async function risolviTesto(testo, rispostaNota, titolo, modo){
+  const area = document.getElementById('workArea');
+  document.getElementById('welcome').style.display = "none";
+  stato.modo = modo;
+  stato.esercizioTitolo = titolo;
+  mostraCaricamento(area, "Il tutor sta risolvendo l'esercizio...");
+  try{
+    const nota = rispostaNota ? `\nLo studente pensa che la risposta sia: "${rispostaNota}". Se è corretta usala come risposta finale; se è sbagliata usa quella giusta.` : '';
+    const risposta = await chiamaClaude([{role:"user", content:
+`Risolvi questo esercizio (argomento di riferimento: ${stato.temaNome || 'matematica'}):
+"${testo}"${nota}
+
+Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, senza backtick, con questa struttura:
+{
+ "risposta": "la risposta finale, la più corta possibile (solo il numero o l'espressione)",
+ "risposte_accettate": ["varianti equivalenti della risposta"],
+ "passi": [
+   {"titolo":"nome breve del passaggio", "contenuto":"spiegazione chiara e colloquiale del passaggio, con i calcoli scritti"}
+ ]
+}
+I passi devono essere in stile Photomath: uno per ogni singola operazione o ragionamento, minimo 3 passi. Se l'esercizio non è di matematica o non è risolvibile, metti in "risposta" una breve spiegazione e in "passi" un solo passo che spiega perché.`}],
+    SISTEMA_BASE, 3000);
+    const dati = estraiJSON(risposta);
+    dati.testo = testo;
+    stato.esercizio = dati;
+    renderEsercizio();
+  }catch(err){ mostraErrore(area, err.message); }
 }
 
 /* ================= ELENCO ARGOMENTI ================= */
@@ -587,7 +765,7 @@ function scegliTema(id){
   renderElencoTemi();
   document.getElementById('topicsNav').classList.remove('show');
   document.getElementById('welcome').style.display = "none";
-  generaEsercizio();
+  mostraHomeArgomento();
 }
 
 /* ================= IMPOSTAZIONI ================= */
