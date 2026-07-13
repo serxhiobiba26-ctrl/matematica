@@ -214,7 +214,9 @@ h1.topic-title{
 .scheda-ex{border:1.5px solid var(--quadretto);border-radius:8px;padding:12px 14px;margin-bottom:10px;background:var(--carta)}
 .scheda-ex .exercise-text{margin:0 0 8px}
 /* ---------- calcolatrice ---------- */
-.calc-modal{max-width:400px}
+.calc-modal{max-width:400px;max-height:90vh;overflow-y:auto}
+#calcSteps{margin-top:10px}
+#calcSteps .step{margin-bottom:10px}
 .calc-display{font-family:'Spline Sans Mono',monospace;font-size:1.15rem;text-align:right}
 .calc-result{min-height:48px;margin:10px 0;padding:10px 12px;border-radius:8px;background:var(--carta);border:1.5px solid var(--quadretto);font-family:'Spline Sans Mono',monospace;display:flex;flex-direction:column;gap:2px;justify-content:center}
 .calc-result .err{color:var(--rosso);font-weight:600;font-size:.9rem}
@@ -285,6 +287,8 @@ h1.topic-title{
     <input type="text" id="calcInput" class="calc-display" placeholder="Scrivi qui..." autocomplete="off" inputmode="text">
     <div class="calc-result" id="calcResult"></div>
     <div class="calc-pad" id="calcPad"></div>
+    <button class="btn btn-ghost btn-piccolo" id="btnCalcPassi" style="margin-top:8px;width:100%;justify-content:center">📖 Mostra i passaggi (come il tutor)</button>
+    <div id="calcSteps"></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" id="btnCloseCalc">Chiudi</button>
     </div>
@@ -1032,6 +1036,8 @@ function premiTasto(k){
 function aggiornaCalc(mostraErr){
   const inp=document.getElementById('calcInput');
   const out=document.getElementById('calcResult');
+  const passi=document.getElementById('calcSteps');
+  if(passi) passi.innerHTML="";   // se cambia l'espressione, i vecchi passaggi non valgono più
   const s=inp.value.trim();
   if(!s){ out.innerHTML=""; return; }
   try{
@@ -1043,6 +1049,38 @@ function aggiornaCalc(mostraErr){
     out.innerHTML = mostraErr ? `<span class="err">${esc(e.message)}</span>` : "";
   }
 }
+async function mostraPassaggiCalc(){
+  const s = document.getElementById('calcInput').value.trim();
+  const cont = document.getElementById('calcSteps');
+  if(!s){ cont.innerHTML = '<div class="errore show">Scrivi prima un\'espressione.</div>'; return; }
+  let esatta = "";
+  try{ esatta = formattaR(valutaEspressione(s)); }
+  catch(e){ cont.innerHTML = '<div class="errore show">' + esc(e.message) + '</div>'; return; }
+  cont.innerHTML = '<div class="loading"><div class="pennino"></div>Il tutor sta scrivendo i passaggi...</div>';
+  try{
+    const risposta = await chiamaClaude([{role:"user", content:
+`Risolvi questa espressione passo per passo, mostrando TUTTI i passaggi intermedi come farebbe un tutor: "${s}".
+Il risultato finale esatto è ${esatta} (usalo come verifica: i tuoi passaggi devono arrivare a questo).
+
+Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, senza backtick, con questa struttura:
+{ "passi": [ {"titolo":"nome breve del passaggio", "contenuto":"spiegazione chiara e colloquiale con i calcoli scritti"} ] }
+I passi in stile Photomath: uno per ogni singola operazione, minimo 3 passi. Rispetta l'ordine delle operazioni (parentesi, poi potenze, poi × e ÷, infine + e −) e usa le tecniche delle frazioni (m.c.m., semplificazione a croce, reciproco).`}],
+    SISTEMA_BASE + "\n\n" + GUIDA_STILE, 2500);
+    const dati = estraiJSON(risposta);
+    stato.esercizio = {testo:s, risposta:esatta, passi:dati.passi || []};
+    let html = `<div style="font-weight:700;color:var(--verde);margin:6px 0 10px">Risultato: ${esc(esatta)}</div>`;
+    (dati.passi || []).forEach((p,i)=>{
+      html += `
+      <div class="step" id="step-${i}">
+        <div class="step-head"><div class="step-num">${i+1}</div><div class="step-title">${esc(p.titolo)}</div></div>
+        <div class="step-body">${esc(p.contenuto)}</div>
+        <div class="step-actions"><button class="btn btn-ghost btn-piccolo" onclick="nonHoCapito(${i}, this)">🤔 Non ho capito questo passaggio</button></div>
+        <div id="deeper-${i}"></div>
+      </div>`;
+    });
+    cont.innerHTML = html;
+  }catch(err){ cont.innerHTML = '<div class="errore show">' + esc(err.message) + '</div>'; }
+}
 
 /* ================= AVVIO ================= */
 costruisciTastierino();
@@ -1051,6 +1089,7 @@ document.getElementById('btnCalc').addEventListener('click', ()=>{
   document.getElementById('calcInput').focus();
 });
 document.getElementById('btnCloseCalc').addEventListener('click', ()=>document.getElementById('calcOverlay').classList.remove('show'));
+document.getElementById('btnCalcPassi').addEventListener('click', mostraPassaggiCalc);
 document.getElementById('calcInput').addEventListener('input', ()=>aggiornaCalc(false));
 document.getElementById('calcInput').addEventListener('keydown', ev=>{ if(ev.key==='Enter') aggiornaCalc(true); });
 renderElencoTemi();
