@@ -213,6 +213,18 @@ h1.topic-title{
 .scheda-liv{font-family:'Bricolage Grotesque';font-weight:700;color:var(--biro);margin:18px 0 6px;font-size:1rem}
 .scheda-ex{border:1.5px solid var(--quadretto);border-radius:8px;padding:12px 14px;margin-bottom:10px;background:var(--carta)}
 .scheda-ex .exercise-text{margin:0 0 8px}
+/* ---------- calcolatrice ---------- */
+.calc-modal{max-width:400px}
+.calc-display{font-family:'Spline Sans Mono',monospace;font-size:1.15rem;text-align:right}
+.calc-result{min-height:48px;margin:10px 0;padding:10px 12px;border-radius:8px;background:var(--carta);border:1.5px solid var(--quadretto);font-family:'Spline Sans Mono',monospace;display:flex;flex-direction:column;gap:2px;justify-content:center}
+.calc-result .err{color:var(--rosso);font-weight:600;font-size:.9rem}
+.calc-result .big{font-size:1.25rem;font-weight:700;color:var(--verde)}
+.calc-result .small{font-size:.85rem;color:var(--grigio)}
+.calc-pad{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:6px}
+.calc-key{border:1.5px solid var(--quadretto);background:#fff;border-radius:8px;padding:14px 0;font-family:'Spline Sans Mono',monospace;font-size:1.05rem;font-weight:600;cursor:pointer;color:var(--grafite)}
+.calc-key:hover{background:#F1F5FB}
+.calc-key.op{color:var(--biro);border-color:var(--biro)}
+.calc-key.eq{grid-column:span 3;background:var(--verde);color:#fff;border:none}
 /* ---------- mobile ---------- */
 .mobile-topic-bar{display:none}
 @media (max-width:820px){
@@ -235,6 +247,7 @@ h1.topic-title{
 <header>
   <div class="logo">Quadretti<small>Matematica da zero all'AFM</small></div>
   <div class="header-spacer"></div>
+  <button class="icon-btn" id="btnCalc">🧮 Calcolatrice</button>
   <button class="icon-btn" id="btnSettings">⚙️ Impostazioni</button>
 </header>
 
@@ -262,6 +275,20 @@ h1.topic-title{
     </div>
     <div id="workArea"></div>
   </main>
+</div>
+
+<!-- modale calcolatrice -->
+<div class="overlay" id="calcOverlay">
+  <div class="modal calc-modal">
+    <h2>🧮 Calcolatrice delle prove</h2>
+    <div class="hint" style="margin-top:0;margin-bottom:8px">Scrivi l'esercizio come su una calcolatrice e controlla il risultato (frazione ridotta e valore decimale). Esempi: 3/4 + 1/6 · (2/5+1/2)/(9/10) · (2/3)^3</div>
+    <input type="text" id="calcInput" class="calc-display" placeholder="Scrivi qui..." autocomplete="off" inputmode="text">
+    <div class="calc-result" id="calcResult"></div>
+    <div class="calc-pad" id="calcPad"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btnCloseCalc">Chiudi</button>
+    </div>
+  </div>
 </div>
 
 <!-- modale impostazioni -->
@@ -870,7 +897,135 @@ document.getElementById('btnMobileTopics').addEventListener('click', ()=>{
   document.getElementById('topicsNav').classList.toggle('show');
 });
 
+/* ================= CALCOLATRICE (aritmetica esatta con frazioni) ================= */
+/* numeri razionali con BigInt: {n, d} sempre ridotti, d>0 */
+function bgcd(a,b){ a=a<0n?-a:a; b=b<0n?-b:b; while(b){ const t=a%b; a=b; b=t; } return a||1n; }
+function R(n,d){ if(d===undefined) d=1n; if(d===0n) throw new Error("divisione per zero"); if(d<0n){ n=-n; d=-d; } const g=bgcd(n,d); return {n:n/g, d:d/g}; }
+function radd(a,b){ return R(a.n*b.d + b.n*a.d, a.d*b.d); }
+function rsub(a,b){ return R(a.n*b.d - b.n*a.d, a.d*b.d); }
+function rmul(a,b){ return R(a.n*b.n, a.d*b.d); }
+function rdiv(a,b){ if(b.n===0n) throw new Error("divisione per zero"); return R(a.n*b.d, a.d*b.n); }
+function rpow(a,e){
+  if(e.d!==1n) throw new Error("l'esponente deve essere un numero intero");
+  let k=e.n, base=a;
+  if(k<0n){ base=rdiv(R(1n), base); k=-k; }
+  if(k>2000n) throw new Error("esponente troppo grande");
+  let res=R(1n);
+  for(let i=0n;i<k;i++) res=rmul(res, base);
+  return res;
+}
+function decToR(str){
+  if(str==="."||str==="") throw new Error("numero non valido");
+  if(str.indexOf(".")>=0){
+    const parti=str.split(".");
+    if(parti.length>2) throw new Error("numero non valido");
+    const dec=parti[1]||"";
+    return R(BigInt((parti[0]||"0")+dec), 10n**BigInt(dec.length));
+  }
+  return R(BigInt(str));
+}
+function tokenizza(s){
+  s=s.replace(/[×·∙xX]/g,"*").replace(/[÷:]/g,":").replace(/[−–—]/g,"-").replace(/,/g,".");
+  const out=[]; let i=0;
+  while(i<s.length){
+    const c=s[i];
+    if(c===" "){ i++; continue; }
+    if("+-*/^()%:".indexOf(c)>=0){ out.push(c); i++; continue; }
+    if(/[0-9.]/.test(c)){ let j=i; while(j<s.length && /[0-9.]/.test(s[j])) j++; out.push({num:true, val:decToR(s.slice(i,j))}); i=j; continue; }
+    throw new Error("carattere non valido: " + c);
+  }
+  return out;
+}
+let calcToks=[], calcPos=0;
+function cPeek(){ return calcToks[calcPos]; }
+function parseExpr(){ let v=parseMulDiv(); while(cPeek()==="+"||cPeek()==="-"){ const op=calcToks[calcPos++]; const r=parseMulDiv(); v = op==="+"?radd(v,r):rsub(v,r); } return v; }
+function parseMulDiv(){ let v=parseFrac(); while(cPeek()==="*"||cPeek()===":"){ const op=calcToks[calcPos++]; const r=parseFrac(); v = op==="*"?rmul(v,r):rdiv(v,r); } return v; }
+function parseFrac(){ let v=parseUnary(); while(cPeek()==="/"){ calcPos++; const r=parseUnary(); v=rdiv(v,r); } return v; }
+function parseUnary(){ if(cPeek()==="-"){ calcPos++; return rmul(R(-1n), parseUnary()); } if(cPeek()==="+"){ calcPos++; return parseUnary(); } return parsePower(); }
+function parsePower(){ let base=parsePrimary(); if(cPeek()==="^"){ calcPos++; const e=parseUnary(); base=rpow(base,e); } return base; }
+function parsePrimary(){
+  const t=cPeek(); let v;
+  if(t==="("){ calcPos++; v=parseExpr(); if(cPeek()!==")") throw new Error("manca una parentesi )"); calcPos++; }
+  else if(t && t.num){ calcPos++; v=t.val; }
+  else throw new Error("espressione non valida");
+  while(cPeek()==="%"){ calcPos++; v=rdiv(v, R(100n)); }
+  return v;
+}
+function valutaEspressione(s){
+  calcToks=tokenizza(s); calcPos=0;
+  if(calcToks.length===0) throw new Error("espressione vuota");
+  const v=parseExpr();
+  if(calcPos!==calcToks.length) throw new Error("espressione non completa");
+  return v;
+}
+function formattaR(r){
+  const seg = r.n<0n ? "-" : "";
+  const n = r.n<0n ? -r.n : r.n;
+  return r.d===1n ? (seg+n.toString()) : (seg+n.toString()+"/"+r.d.toString());
+}
+function decimaleR(r){
+  if(r.d===1n) return null;
+  const neg=r.n<0n; let n=neg?-r.n:r.n; const d=r.d;
+  const intpart=n/d; let rem=n%d; let dec=""; let steps=0; let periodico=false;
+  while(rem!==0n){ if(steps>=12){ periodico=true; break; } rem*=10n; dec+=(rem/d).toString(); rem%=d; steps++; }
+  dec=dec.replace(/0+$/,"");
+  const s=(neg?"-":"")+intpart.toString()+(dec?("."+dec):"");
+  return (periodico?"≈ ":"= ")+s;
+}
+const CALC_ROWS = [
+  ["7","8","9","(",")"],
+  ["4","5","6","×","÷"],
+  ["1","2","3","+","−"],
+  ["0",".","/","^","%"],
+  ["C","⌫","="]
+];
+const CALC_OP = new Set(["(",")","×","÷","+","−","/","^","%"]);
+function costruisciTastierino(){
+  const pad=document.getElementById('calcPad');
+  pad.innerHTML="";
+  CALC_ROWS.forEach(riga=>{
+    riga.forEach(k=>{
+      const b=document.createElement('button');
+      b.textContent=k;
+      b.className="calc-key" + (k==="=" ? " eq" : (CALC_OP.has(k) ? " op" : ""));
+      b.addEventListener('click', ()=>premiTasto(k));
+      pad.appendChild(b);
+    });
+  });
+}
+function premiTasto(k){
+  const inp=document.getElementById('calcInput');
+  if(k==="C"){ inp.value=""; }
+  else if(k==="⌫"){ inp.value=inp.value.slice(0,-1); }
+  else if(k==="="){ aggiornaCalc(true); inp.focus(); return; }
+  else { inp.value += k; }
+  inp.focus();
+  aggiornaCalc(false);
+}
+function aggiornaCalc(mostraErr){
+  const inp=document.getElementById('calcInput');
+  const out=document.getElementById('calcResult');
+  const s=inp.value.trim();
+  if(!s){ out.innerHTML=""; return; }
+  try{
+    const r=valutaEspressione(s);
+    const fraz=formattaR(r);
+    const dec=decimaleR(r);
+    out.innerHTML = `<span class="big">= ${esc(fraz)}</span>` + (dec ? `<span class="small">${esc(dec)}</span>` : "");
+  }catch(e){
+    out.innerHTML = mostraErr ? `<span class="err">${esc(e.message)}</span>` : "";
+  }
+}
+
 /* ================= AVVIO ================= */
+costruisciTastierino();
+document.getElementById('btnCalc').addEventListener('click', ()=>{
+  document.getElementById('calcOverlay').classList.add('show');
+  document.getElementById('calcInput').focus();
+});
+document.getElementById('btnCloseCalc').addEventListener('click', ()=>document.getElementById('calcOverlay').classList.remove('show'));
+document.getElementById('calcInput').addEventListener('input', ()=>aggiornaCalc(false));
+document.getElementById('calcInput').addEventListener('keydown', ev=>{ if(ev.key==='Enter') aggiornaCalc(true); });
 renderElencoTemi();
 if(!stato.apiKey) setTimeout(apriImpostazioni, 600);
 </script>
