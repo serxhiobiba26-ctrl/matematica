@@ -210,6 +210,9 @@ h1.topic-title{
 .mini-form textarea{min-height:70px;resize:vertical}
 .vuoto{color:var(--grigio);font-size:.9rem;font-style:italic;margin-bottom:8px}
 .lezione-testo{line-height:1.75;white-space:pre-wrap;font-size:1.02rem;margin:8px 0}
+.scheda-liv{font-family:'Bricolage Grotesque';font-weight:700;color:var(--biro);margin:18px 0 6px;font-size:1rem}
+.scheda-ex{border:1.5px solid var(--quadretto);border-radius:8px;padding:12px 14px;margin-bottom:10px;background:var(--carta)}
+.scheda-ex .exercise-text{margin:0 0 8px}
 /* ---------- mobile ---------- */
 .mobile-topic-bar{display:none}
 @media (max-width:820px){
@@ -340,6 +343,7 @@ const stato = {
   esercizio: null,           // {testo, risposta, passi:[{titolo,contenuto}]}
   esercizioTitolo: null,
   lezione: null,
+  scheda: null,              // {livelli:[{titolo,esercizi:[...]}]}
   contesto: '',              // contesto per la chat col tutor
   chat: []                   // cronologia domande libere
 };
@@ -380,6 +384,14 @@ function estraiJSON(testo){
 
 const SISTEMA_BASE = `Sei un tutor di matematica paziente per uno studente adulto che sta riprendendo la matematica da zero per prepararsi al diploma AFM da privatista. Parla in italiano semplice e colloquiale, mai da professore cattedratico. Usa notazione matematica semplice in testo puro: ² ³ per le potenze, √ per le radici, × e ÷ per le operazioni, le frazioni come a/b. Non usare mai LaTeX, non usare markdown con asterischi. Spiega sempre il PERCHÉ delle cose, non solo il come.`;
 
+/* Stile didattico ispirato alla dispensa del prof: chiaro, strutturato, con tanti passaggi. */
+const GUIDA_STILE = `STILE DIDATTICO DA SEGUIRE (ispirato a una dispensa scolastica ben fatta):
+- Parti sempre dalla definizione chiara del concetto, poi le regole, poi gli esempi svolti.
+- Mostra SEMPRE tutti i passaggi intermedi, uno alla volta, senza mai saltare pezzi.
+- Per le frazioni usa le tecniche classiche chiamandole per nome: minimo comune multiplo (m.c.m.) per addizioni e sottrazioni; semplificazione "a croce" nelle moltiplicazioni; moltiplicazione per il reciproco (inverso) nelle divisioni; riduzione ai minimi termini del risultato finale.
+- Nelle espressioni rispetta l'ordine delle operazioni: prima le parentesi (tonde, poi quadre, poi graffe), poi le potenze, poi moltiplicazioni e divisioni nell'ordine in cui si trovano, infine addizioni e sottrazioni.
+- Difficoltà crescente: dal semplice riconoscimento/semplificazione fino alle espressioni con parentesi e potenze.`;
+
 /* ================= GENERAZIONE ESERCIZIO ================= */
 function difficolta(id){
   const p = prog(id);
@@ -409,7 +421,7 @@ Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, senza backti
  ]
 }
 I passi devono essere in stile Photomath: uno per ogni singola operazione o ragionamento, numerabili, mai passi giganti che saltano pezzi. Minimo 3 passi, anche per esercizi facili.`}],
-    SISTEMA_BASE, 3000);
+    SISTEMA_BASE + "\n\n" + GUIDA_STILE, 3000);
     stato.esercizio = estraiJSON(risposta);
     renderEsercizio();
   }catch(err){ mostraErrore(area, err.message); }
@@ -610,6 +622,7 @@ function mostraHomeArgomento(){
       <button class="btn btn-blu" onclick="generaLezione()">📖 Spiegami la lezione</button>
       <button class="btn btn-ghost" onclick="generaEsercizio()">✏️ Fai un esercizio</button>
     </div>
+    <button class="btn btn-ghost btn-piccolo" style="margin-top:2px" onclick="generaScheda()">📝 Scheda a difficoltà crescente (5 livelli)</button>
 
     <div class="sezione">
       <h3>➕ I tuoi esercizi</h3>
@@ -652,7 +665,7 @@ Struttura la lezione così, in testo puro (niente JSON, niente markdown con aste
 - Inserisci 1 o 2 esempi svolti passo per passo con numeri piccoli.
 - Chiudi con "Da ricordare": 2-4 punti chiave.
 Usa notazione semplice in testo puro (² ³ per le potenze, √ per le radici, × e ÷, le frazioni come a/b). Massimo 40 righe.`}],
-    SISTEMA_BASE, 2500);
+    SISTEMA_BASE + "\n\n" + GUIDA_STILE, 2500);
     stato.lezione = risposta;
     renderLezione();
   }catch(err){ mostraErrore(area, err.message); }
@@ -680,6 +693,76 @@ function renderLezione(){
     </div>
   </div>`;
   document.getElementById('chatInput').addEventListener('keydown', ev=>{ if(ev.key==='Enter') inviaDomanda(); });
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+/* ================= SCHEDA A DIFFICOLTÀ CRESCENTE ================= */
+async function generaScheda(){
+  const area = document.getElementById('workArea');
+  document.getElementById('welcome').style.display = "none";
+  mostraCaricamento(area, "Il tutor sta preparando la scheda di esercizi...");
+  try{
+    const risposta = await chiamaClaude([{role:"user", content:
+`Prepara una SCHEDA DI ESERCIZI a difficoltà crescente sull'argomento "${stato.temaNome}", in stile scolastico (come una dispensa con esercizi divisi in livelli).
+Fai 5 livelli, dal più facile al più difficile. Ogni livello deve avere 2 esercizi.
+
+Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, senza backtick, con questa struttura:
+{
+ "livelli": [
+   {
+     "titolo": "Livello 1: nome del livello",
+     "esercizi": [
+       {
+         "testo": "il testo dell'esercizio",
+         "risposta": "la risposta finale breve",
+         "passi": [ {"titolo":"nome breve del passaggio", "contenuto":"spiegazione chiara con i calcoli"} ]
+       }
+     ]
+   }
+ ]
+}
+I passi in stile Photomath: uno per operazione, tutti i passaggi intermedi. Adatta i livelli all'argomento (per le frazioni, ad esempio: dal riconoscimento/semplificazione, alle addizioni/sottrazioni, a moltiplicazioni/divisioni/potenze, fino alle espressioni con parentesi e potenze).`}],
+    SISTEMA_BASE + "\n\n" + GUIDA_STILE, 4000);
+    stato.scheda = estraiJSON(risposta);
+    renderScheda();
+  }catch(err){ mostraErrore(area, err.message); }
+}
+function renderScheda(){
+  const area = document.getElementById('workArea');
+  const s = stato.scheda;
+  let html = "";
+  let k = 0;
+  (s.livelli || []).forEach(liv=>{
+    html += `<h3 class="scheda-liv">${esc(liv.titolo || 'Livello')}</h3>`;
+    (liv.esercizi || []).forEach(ex=>{
+      const id = 'sol' + (k++);
+      const passi = (ex.passi || []).map((p,i)=>`
+        <div class="step">
+          <div class="step-head"><div class="step-num">${i+1}</div><div class="step-title">${esc(p.titolo)}</div></div>
+          <div class="step-body">${esc(p.contenuto)}</div>
+        </div>`).join("");
+      html += `
+      <div class="scheda-ex">
+        <div class="exercise-text">${esc(ex.testo)}</div>
+        <button class="btn btn-ghost btn-piccolo" onclick="const s=document.getElementById('${id}'); s.style.display = s.style.display==='block'?'none':'block'">👀 Mostra/nascondi soluzione</button>
+        <div id="${id}" style="display:none;margin-top:10px">
+          <div style="font-weight:600;color:var(--verde);margin-bottom:8px">Risposta: ${esc(ex.risposta)}</div>
+          ${passi}
+        </div>
+      </div>`;
+    });
+  });
+  area.innerHTML = `
+  <div class="pagina">
+    <div class="eyebrow">Scheda di esercizi</div>
+    <h1 class="topic-title">${esc(stato.temaNome)}</h1>
+    <p class="intro-domanda">Esercizi a difficoltà crescente. Provali sul quaderno, poi controlla la soluzione.</p>
+    ${html}
+    <div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn btn-blu" onclick="generaScheda()">🔄 Nuova scheda</button>
+      <button class="btn btn-ghost" onclick="mostraHomeArgomento()">⬅️ Torna all'argomento</button>
+    </div>
+  </div>`;
   window.scrollTo({top:0, behavior:'smooth'});
 }
 
@@ -729,7 +812,7 @@ Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, senza backti
  ]
 }
 I passi devono essere in stile Photomath: uno per ogni singola operazione o ragionamento, minimo 3 passi. Se l'esercizio non è di matematica o non è risolvibile, metti in "risposta" una breve spiegazione e in "passi" un solo passo che spiega perché.`}],
-    SISTEMA_BASE, 3000);
+    SISTEMA_BASE + "\n\n" + GUIDA_STILE, 3000);
     const dati = estraiJSON(risposta);
     dati.testo = testo;
     stato.esercizio = dati;
