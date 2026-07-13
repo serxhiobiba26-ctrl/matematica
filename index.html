@@ -297,15 +297,19 @@ h1.topic-title{
     <h2>Impostazioni</h2>
     <label for="apiKeyInput">Chiave API Anthropic</label>
     <input type="password" id="apiKeyInput" placeholder="sk-ant-...">
-    <div class="hint">La chiave resta salvata solo su questo dispositivo (localStorage), non viene inviata da nessun'altra parte.</div>
+    <div class="hint">La chiave resta salvata solo su questo dispositivo (nel browser), non viene inviata da nessun'altra parte. La reinserisci soltanto se cambi dispositivo o cancelli i dati del browser.</div>
+    <div class="hint" id="apiKeyStatus" style="margin-top:6px"></div>
     <label for="modelSelect">Modello</label>
     <select id="modelSelect">
       <option value="claude-sonnet-4-6">Claude Sonnet — spiegazioni migliori</option>
       <option value="claude-haiku-4-5-20251001">Claude Haiku — più veloce ed economico</option>
     </select>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" id="btnCloseSettings">Chiudi</button>
-      <button class="btn btn-blu" id="btnSaveSettings">Salva</button>
+    <div class="modal-actions" style="justify-content:space-between">
+      <button class="btn btn-ghost btn-piccolo" id="btnRemoveKey">Rimuovi chiave</button>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-ghost" id="btnCloseSettings">Chiudi</button>
+        <button class="btn btn-blu" id="btnSaveSettings">Salva</button>
+      </div>
     </div>
   </div>
 </div>
@@ -879,19 +883,42 @@ function scegliTema(id){
 }
 
 /* ================= IMPOSTAZIONI ================= */
+function aggiornaStatoChiave(){
+  const el = document.getElementById('apiKeyStatus');
+  if(!el) return;
+  if(stato.apiKey){
+    const coda = stato.apiKey.length>4 ? stato.apiKey.slice(-4) : '';
+    el.innerHTML = '✓ Chiave memorizzata su questo dispositivo' + (coda ? (' (termina con …' + esc(coda) + ')') : '') + '. Non dovrai reinserirla.';
+    el.style.color = 'var(--verde)';
+  }else{
+    el.textContent = 'Nessuna chiave salvata: inseriscila per iniziare.';
+    el.style.color = 'var(--grigio)';
+  }
+}
 function apriImpostazioni(){
   document.getElementById('apiKeyInput').value = stato.apiKey;
   document.getElementById('modelSelect').value = stato.model;
+  aggiornaStatoChiave();
   document.getElementById('settingsOverlay').classList.add('show');
 }
 document.getElementById('btnSettings').addEventListener('click', apriImpostazioni);
 document.getElementById('btnCloseSettings').addEventListener('click', ()=>document.getElementById('settingsOverlay').classList.remove('show'));
 document.getElementById('btnSaveSettings').addEventListener('click', ()=>{
-  stato.apiKey = document.getElementById('apiKeyInput').value.trim();
+  const v = document.getElementById('apiKeyInput').value.trim();
+  if(v){ stato.apiKey = v; localStorage.setItem('q_apiKey', v); } // se il campo è vuoto, mantieni la chiave già salvata
   stato.model = document.getElementById('modelSelect').value;
-  localStorage.setItem('q_apiKey', stato.apiKey);
   localStorage.setItem('q_model', stato.model);
-  document.getElementById('settingsOverlay').classList.remove('show');
+  aggiornaStatoChiave();
+  const el = document.getElementById('apiKeyStatus');
+  if(el && stato.apiKey){ el.innerHTML = '✓ Salvata! Resterà memorizzata su questo dispositivo.'; el.style.color = 'var(--verde)'; }
+  setTimeout(()=>document.getElementById('settingsOverlay').classList.remove('show'), 700);
+});
+document.getElementById('btnRemoveKey').addEventListener('click', ()=>{
+  if(!confirm('Vuoi rimuovere la chiave salvata da questo dispositivo?')) return;
+  stato.apiKey = '';
+  localStorage.removeItem('q_apiKey');
+  document.getElementById('apiKeyInput').value = '';
+  aggiornaStatoChiave();
 });
 document.getElementById('btnMobileTopics').addEventListener('click', ()=>{
   document.getElementById('topicsNav').classList.toggle('show');
