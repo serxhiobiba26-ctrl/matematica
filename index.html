@@ -213,6 +213,12 @@ h1.topic-title{
 .scheda-liv{font-family:'Bricolage Grotesque';font-weight:700;color:var(--biro);margin:18px 0 6px;font-size:1rem}
 .scheda-ex{border:1.5px solid var(--quadretto);border-radius:8px;padding:12px 14px;margin-bottom:10px;background:var(--carta)}
 .scheda-ex .exercise-text{margin:0 0 8px}
+/* ---------- svolgimento stile dispensa ---------- */
+.step-calc{font-family:'Spline Sans Mono',monospace;font-size:1.05rem;color:var(--biro-scuro);background:#fff;border:1px solid var(--quadretto);border-radius:6px;padding:8px 12px;margin:6px 0;text-align:center;overflow-x:auto}
+.svolgimento{border:1.5px solid var(--biro);border-radius:10px;overflow:hidden;margin-top:8px}
+.svolgimento-head{background:var(--biro);color:#fff;font-family:'Bricolage Grotesque';font-weight:700;padding:10px 14px;font-size:.95rem}
+.svolgimento-body{padding:14px 14px 4px}
+.svolgimento-body .step{margin-bottom:12px}
 /* ---------- calcolatrice ---------- */
 .calc-modal{max-width:400px;max-height:90vh;overflow-y:auto}
 #calcSteps{margin-top:10px}
@@ -425,7 +431,8 @@ const GUIDA_STILE = `STILE DIDATTICO DA SEGUIRE (ispirato a una dispensa scolast
 - Mostra SEMPRE tutti i passaggi intermedi, uno alla volta, senza mai saltare pezzi.
 - Per le frazioni usa le tecniche classiche chiamandole per nome: minimo comune multiplo (m.c.m.) per addizioni e sottrazioni; semplificazione "a croce" nelle moltiplicazioni; moltiplicazione per il reciproco (inverso) nelle divisioni; riduzione ai minimi termini del risultato finale.
 - Nelle espressioni rispetta l'ordine delle operazioni: prima le parentesi (tonde, poi quadre, poi graffe), poi le potenze, poi moltiplicazioni e divisioni nell'ordine in cui si trovano, infine addizioni e sottrazioni.
-- Difficoltà crescente: dal semplice riconoscimento/semplificazione fino alle espressioni con parentesi e potenze.`;
+- Difficoltà crescente: dal semplice riconoscimento/semplificazione fino alle espressioni con parentesi e potenze.
+- FORMATO DEI PASSAGGI (importante): ogni passo ha tre parti — "titolo" = cosa fai in breve (es. "Risolviamo le parentesi tonde"); "calcolo" = la riga di matematica che mostra l'espressione trasformata dopo questo passo, come nell'esempio svolto di una dispensa (es. (2/5 + 1/2) = (4+5)/10 = 9/10, oppure la nuova espressione dopo la sostituzione); "contenuto" = una breve spiegazione del perché. Nei passi successivi riscrivi l'INTERA espressione aggiornata, così si vede l'andamento passo dopo passo fino al risultato.`;
 
 /* ================= GENERAZIONE ESERCIZIO ================= */
 function difficolta(id){
@@ -452,7 +459,7 @@ Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, senza backti
  "risposta": "la risposta finale, la più corta possibile (solo il numero o l'espressione)",
  "risposte_accettate": ["varianti equivalenti della risposta, es. 0.5 e 1/2"],
  "passi": [
-   {"titolo":"nome breve del passaggio", "contenuto":"spiegazione chiara e colloquiale del passaggio, con i calcoli scritti"}
+   {"titolo":"cosa fai in questo passaggio (breve)", "calcolo":"la riga di matematica che mostra l'espressione trasformata dopo questo passaggio, come in una dispensa (es. (2/5 + 1/2) = (4+5)/10 = 9/10); nei passi dopo il primo riscrivi l'INTERA espressione aggiornata", "contenuto":"breve spiegazione del perché"}
  ]
 }
 I passi devono essere in stile Photomath: uno per ogni singola operazione o ragionamento, numerabili, mai passi giganti che saltano pezzi. Minimo 3 passi, anche per esercizi facili.`}],
@@ -515,27 +522,33 @@ function mostraErrore(el, msg){
 }
 const CERCHI = ["①","②","③","④","⑤","⑥","⑦","⑧","⑨","⑩","⑪","⑫","⑬","⑭","⑮"];
 
+/* un passaggio in stile dispensa: cosa fai (titolo) + la riga di matematica (calcolo) + il perché (contenuto) */
+function passoHTML(p, i, interattivo){
+  const calc = p.calcolo ? `<div class="step-calc">${esc(p.calcolo)}</div>` : "";
+  const corpo = p.contenuto ? `<div class="step-body">${esc(p.contenuto)}</div>` : "";
+  const azioni = interattivo
+    ? `<div class="step-actions"><button class="btn btn-ghost btn-piccolo" onclick="nonHoCapito(${i}, this)">🤔 Non ho capito questo passaggio</button></div><div id="deeper-${i}"></div>`
+    : "";
+  return `
+    <div class="step" id="step-${i}">
+      <div class="step-head"><div class="step-num">${i+1}</div><div class="step-title">${esc(p.titolo)}</div></div>
+      ${calc}
+      ${corpo}
+      ${azioni}
+    </div>`;
+}
+function svolgimentoHTML(passi, interattivo){
+  const body = (passi || []).map((p,i)=>passoHTML(p,i,interattivo)).join("");
+  return `<div class="svolgimento"><div class="svolgimento-head">Svolgimento passo per passo</div><div class="svolgimento-body">${body}</div></div>`;
+}
+
 function renderEsercizio(){
   const e = stato.esercizio;
   const area = document.getElementById('workArea');
   document.getElementById('welcome').style.display = "none";
   stato.chat = [];
-  stato.contesto = `L'esercizio in corso è: "${e.testo}" (soluzione: ${e.risposta}). I passaggi della soluzione sono: ${e.passi.map((p,i)=>`(${i+1}) ${p.titolo}: ${p.contenuto}`).join(" ")}`;
-  let passiHtml = "";
-  e.passi.forEach((p,i)=>{
-    passiHtml += `
-    <div class="step" id="step-${i}">
-      <div class="step-head">
-        <div class="step-num">${i+1}</div>
-        <div class="step-title">${esc(p.titolo)}</div>
-      </div>
-      <div class="step-body">${esc(p.contenuto)}</div>
-      <div class="step-actions">
-        <button class="btn btn-ghost btn-piccolo" onclick="nonHoCapito(${i}, this)">🤔 Non ho capito questo passaggio</button>
-      </div>
-      <div id="deeper-${i}"></div>
-    </div>`;
-  });
+  stato.contesto = `L'esercizio in corso è: "${e.testo}" (soluzione: ${e.risposta}). I passaggi della soluzione sono: ${e.passi.map((p,i)=>`(${i+1}) ${p.titolo}: ${p.calcolo||''} ${p.contenuto||''}`).join(" ")}`;
+  const passiHtml = svolgimentoHTML(e.passi, true);
   area.innerHTML = `
   <div class="pagina">
     <div class="eyebrow">Esercizio</div>
@@ -548,7 +561,7 @@ function renderEsercizio(){
     <div class="verdict" id="verdict"></div>
     <button class="btn btn-ghost" id="btnShowSteps" onclick="document.getElementById('stepsWrap').style.display='block'; this.style.display='none'">👀 Mostra la soluzione passo per passo</button>
     <div id="stepsWrap" style="display:none">
-      <div class="steps" style="margin-top:16px">${passiHtml}</div>
+      <div style="margin-top:16px">${passiHtml}</div>
       <div class="chat-box">
         <div class="eyebrow" style="margin-bottom:8px">Chiedi al tutor</div>
         <div class="chat-log" id="chatLog"></div>
@@ -579,7 +592,7 @@ async function nonHoCapito(indicePasso, bottone, livelloProfondita){
   load.innerHTML = '<div class="pennino"></div>Il tutor sta tornando alle basi...';
   contenitore.appendChild(load);
   try{
-    const testoSpiegato = profondita === 1 ? passo.contenuto
+    const testoSpiegato = profondita === 1 ? [passo.titolo, passo.calcolo, passo.contenuto].filter(Boolean).join(" — ")
       : contenitore.querySelector('.deeper-testo').textContent;
     const risposta = await chiamaClaude([{role:"user", content:
 `Esercizio: ${stato.esercizio.testo}
@@ -750,7 +763,7 @@ Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, senza backti
        {
          "testo": "il testo dell'esercizio",
          "risposta": "la risposta finale breve",
-         "passi": [ {"titolo":"nome breve del passaggio", "contenuto":"spiegazione chiara con i calcoli"} ]
+         "passi": [ {"titolo":"cosa fai (breve)", "calcolo":"la riga di matematica con l'espressione trasformata dopo questo passaggio", "contenuto":"breve spiegazione del perché"} ]
        }
      ]
    }
@@ -771,18 +784,13 @@ function renderScheda(){
     html += `<h3 class="scheda-liv">${esc(liv.titolo || 'Livello')}</h3>`;
     (liv.esercizi || []).forEach(ex=>{
       const id = 'sol' + (k++);
-      const passi = (ex.passi || []).map((p,i)=>`
-        <div class="step">
-          <div class="step-head"><div class="step-num">${i+1}</div><div class="step-title">${esc(p.titolo)}</div></div>
-          <div class="step-body">${esc(p.contenuto)}</div>
-        </div>`).join("");
       html += `
       <div class="scheda-ex">
         <div class="exercise-text">${esc(ex.testo)}</div>
         <button class="btn btn-ghost btn-piccolo" onclick="const s=document.getElementById('${id}'); s.style.display = s.style.display==='block'?'none':'block'">👀 Mostra/nascondi soluzione</button>
         <div id="${id}" style="display:none;margin-top:10px">
           <div style="font-weight:600;color:var(--verde);margin-bottom:8px">Risposta: ${esc(ex.risposta)}</div>
-          ${passi}
+          ${svolgimentoHTML(ex.passi || [], false)}
         </div>
       </div>`;
     });
@@ -843,7 +851,7 @@ Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, senza backti
  "risposta": "la risposta finale, la più corta possibile (solo il numero o l'espressione)",
  "risposte_accettate": ["varianti equivalenti della risposta"],
  "passi": [
-   {"titolo":"nome breve del passaggio", "contenuto":"spiegazione chiara e colloquiale del passaggio, con i calcoli scritti"}
+   {"titolo":"cosa fai in questo passaggio (breve)", "calcolo":"la riga di matematica che mostra l'espressione trasformata dopo questo passaggio, come in una dispensa (es. (2/5 + 1/2) = (4+5)/10 = 9/10); nei passi dopo il primo riscrivi l'INTERA espressione aggiornata", "contenuto":"breve spiegazione del perché"}
  ]
 }
 I passi devono essere in stile Photomath: uno per ogni singola operazione o ragionamento, minimo 3 passi. Se l'esercizio non è di matematica o non è risolvibile, metti in "risposta" una breve spiegazione e in "passi" un solo passo che spiega perché.`}],
@@ -1063,22 +1071,12 @@ async function mostraPassaggiCalc(){
 Il risultato finale esatto è ${esatta} (usalo come verifica: i tuoi passaggi devono arrivare a questo).
 
 Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, senza backtick, con questa struttura:
-{ "passi": [ {"titolo":"nome breve del passaggio", "contenuto":"spiegazione chiara e colloquiale con i calcoli scritti"} ] }
+{ "passi": [ {"titolo":"cosa fai (breve)", "calcolo":"la riga di matematica che mostra l'espressione trasformata dopo questo passaggio; nei passi dopo il primo riscrivi l'INTERA espressione aggiornata", "contenuto":"breve spiegazione del perché"} ] }
 I passi in stile Photomath: uno per ogni singola operazione, minimo 3 passi. Rispetta l'ordine delle operazioni (parentesi, poi potenze, poi × e ÷, infine + e −) e usa le tecniche delle frazioni (m.c.m., semplificazione a croce, reciproco).`}],
     SISTEMA_BASE + "\n\n" + GUIDA_STILE, 2500);
     const dati = estraiJSON(risposta);
     stato.esercizio = {testo:s, risposta:esatta, passi:dati.passi || []};
-    let html = `<div style="font-weight:700;color:var(--verde);margin:6px 0 10px">Risultato: ${esc(esatta)}</div>`;
-    (dati.passi || []).forEach((p,i)=>{
-      html += `
-      <div class="step" id="step-${i}">
-        <div class="step-head"><div class="step-num">${i+1}</div><div class="step-title">${esc(p.titolo)}</div></div>
-        <div class="step-body">${esc(p.contenuto)}</div>
-        <div class="step-actions"><button class="btn btn-ghost btn-piccolo" onclick="nonHoCapito(${i}, this)">🤔 Non ho capito questo passaggio</button></div>
-        <div id="deeper-${i}"></div>
-      </div>`;
-    });
-    cont.innerHTML = html;
+    cont.innerHTML = `<div style="font-weight:700;color:var(--verde);margin:6px 0 10px">Risultato: ${esc(esatta)}</div>` + svolgimentoHTML(dati.passi || [], true);
   }catch(err){ cont.innerHTML = '<div class="errore show">' + esc(err.message) + '</div>'; }
 }
 
