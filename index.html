@@ -280,6 +280,14 @@ h1.topic-title{
          ③ Puoi anche <strong>aggiungere i tuoi esercizi</strong> (del libro o dei compiti) e farteli risolvere passo per passo<br>
          ④ Se un passaggio non ti torna, premi <strong>"Non ho capito"</strong>: il tutor torna indietro e te lo spiega ancora più di base, quante volte serve.</p>
       <p style="margin-top:14px"><em>Prima di iniziare, inserisci la tua chiave API nelle Impostazioni (in alto a destra).</em></p>
+      <div class="sezione">
+        <h3>✏️ Hai già un esercizio? Risolvilo subito</h3>
+        <p class="sub">Non serve scegliere l'argomento: scrivilo qui e il tutor te lo risolve passo per passo.</p>
+        <div class="mini-form">
+          <textarea id="welcomeSolverTesto" placeholder="Scrivi o incolla qui l'esercizio..."></textarea>
+          <button class="btn btn-blu btn-piccolo" onclick="risolviDiretto('welcomeSolverTesto')">Risolvi passo per passo</button>
+        </div>
+      </div>
     </div>
     <div id="workArea"></div>
   </main>
@@ -492,21 +500,20 @@ function gestisciVerifica(){
   const input = document.getElementById('answerInput');
   const mia = input.value.trim();
   if(!mia) return;
-  const p = prog(stato.temaId);
   const box = document.getElementById('verdict');
   const giusta = verificaLocale(mia);
-  p.fatti++;
+  const p = stato.temaId ? prog(stato.temaId) : null;   // in modalità diretta non traccio i progressi
+  if(p) p.fatti++;
   if(giusta){
-    p.giusti++; p.serie = Math.max(1, p.serie+1);
+    if(p){ p.giusti++; p.serie = Math.max(1, p.serie+1); }
     box.className = "verdict ok";
     box.textContent = "✓ Giusto! Bravo. Guarda comunque i passaggi qui sotto per fissare il metodo.";
   }else{
-    p.serie = Math.min(-1, p.serie-1);
+    if(p){ p.serie = Math.min(-1, p.serie-1); }
     box.className = "verdict ko";
     box.textContent = "✗ Non è la risposta che mi aspettavo (la soluzione è " + stato.esercizio.risposta + "). Nessun problema: guarda i passaggi e scopri dove ti sei perso.";
   }
-  salvaProgresso();
-  renderElencoTemi();
+  if(p){ salvaProgresso(); renderElencoTemi(); }
   document.getElementById('stepsWrap').style.display = "block";
   document.getElementById('btnShowSteps').style.display = "none";
 }
@@ -549,6 +556,10 @@ function renderEsercizio(){
   stato.chat = [];
   stato.contesto = `L'esercizio in corso è: "${e.testo}" (soluzione: ${e.risposta}). I passaggi della soluzione sono: ${e.passi.map((p,i)=>`(${i+1}) ${p.titolo}: ${p.calcolo||''} ${p.contenuto||''}`).join(" ")}`;
   const passiHtml = svolgimentoHTML(e.passi, true);
+  const bottoniFine = stato.temaId
+    ? `<button class="btn btn-blu" onclick="generaEsercizio()">➜ Nuovo esercizio dal tutor</button>
+        <button class="btn btn-ghost" onclick="mostraHomeArgomento()">⬅️ Torna all'argomento</button>`
+    : `<button class="btn btn-blu" onclick="mostraRisolviDiretto()">➜ Risolvi un altro esercizio</button>`;
   area.innerHTML = `
   <div class="pagina">
     <div class="eyebrow">Esercizio</div>
@@ -571,8 +582,7 @@ function renderEsercizio(){
         </div>
       </div>
       <div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap">
-        <button class="btn btn-blu" onclick="generaEsercizio()">➜ Nuovo esercizio dal tutor</button>
-        <button class="btn btn-ghost" onclick="mostraHomeArgomento()">⬅️ Torna all'argomento</button>
+        ${bottoniFine}
       </div>
     </div>
   </div>`;
@@ -809,6 +819,34 @@ function renderScheda(){
   window.scrollTo({top:0, behavior:'smooth'});
 }
 
+/* ================= RISOLUTORE DIRETTO (senza scegliere argomento) ================= */
+function mostraRisolviDiretto(){
+  stato.temaId = null; stato.temaNome = null;
+  renderElencoTemi();
+  document.getElementById('topicsNav').classList.remove('show');
+  document.getElementById('welcome').style.display = "none";
+  const area = document.getElementById('workArea');
+  area.innerHTML = `
+  <div class="pagina">
+    <div class="eyebrow">Risolvi un esercizio</div>
+    <h1 class="topic-title">Il tuo esercizio</h1>
+    <p class="intro-domanda">Scrivi o incolla qui l'esercizio: il tutor te lo risolve passo per passo. Non serve scegliere l'argomento.</p>
+    <div class="mini-form">
+      <textarea id="soloTesto" placeholder="Scrivi qui l'esercizio da risolvere..."></textarea>
+      <button class="btn btn-blu" onclick="risolviDiretto('soloTesto')">Risolvi passo per passo</button>
+    </div>
+  </div>`;
+  window.scrollTo({top:0, behavior:'smooth'});
+  const t = document.getElementById('soloTesto'); if(t) t.focus();
+}
+function risolviDiretto(idTextarea){
+  const el = document.getElementById(idTextarea);
+  const testo = el ? el.value.trim() : "";
+  if(!testo){ alert("Scrivi prima l'esercizio."); return; }
+  stato.temaId = null; stato.temaNome = null;
+  risolviTesto(testo, "", "Il tuo esercizio", 'diretto');
+}
+
 /* ================= ESERCIZI PERSONALI ================= */
 function aggiungiMio(){
   const testo = document.getElementById('mioTesto').value.trim();
@@ -866,7 +904,8 @@ I passi devono essere in stile Photomath: uno per ogni singola operazione o ragi
 /* ================= ELENCO ARGOMENTI ================= */
 function renderElencoTemi(){
   const nav = document.getElementById('topicsNav');
-  nav.innerHTML = PROGRAMMA.map((liv,li)=>{
+  const bottoneDiretto = `<button class="topic-btn" style="font-weight:600;color:var(--verde);padding:12px 14px;border-bottom:1.5px solid var(--quadretto)" onclick="mostraRisolviDiretto()">✏️ Risolvi un tuo esercizio<br><small style="color:var(--grigio);font-weight:400">senza scegliere l'argomento</small></button>`;
+  nav.innerHTML = bottoneDiretto + PROGRAMMA.map((liv,li)=>{
     const aperto = stato.temaId ? liv.temi.some(t=>t[0]===stato.temaId) : li===0;
     return `
     <div class="level ${aperto?'open':''}">
