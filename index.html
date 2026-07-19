@@ -285,7 +285,10 @@ h1.topic-title{
         <p class="sub">Non serve scegliere l'argomento: scrivilo qui e il tutor te lo risolve passo per passo.</p>
         <div class="mini-form">
           <textarea id="welcomeSolverTesto" placeholder="Scrivi o incolla qui l'esercizio..."></textarea>
-          <button class="btn btn-blu btn-piccolo" onclick="risolviDiretto('welcomeSolverTesto')">Risolvi passo per passo</button>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn btn-blu btn-piccolo" onclick="risolviDiretto('welcomeSolverTesto')">Risolvi passo per passo</button>
+            <button class="btn btn-ghost btn-piccolo" onclick="document.getElementById('fotoInput').click()">📷 Risolvi da una foto</button>
+          </div>
         </div>
       </div>
     </div>
@@ -331,6 +334,8 @@ h1.topic-title{
     </div>
   </div>
 </div>
+
+<input type="file" id="fotoInput" accept="image/*" capture="environment" style="display:none" onchange="risolviDaFoto(this)">
 
 <script>
 /* ================= PROGRAMMA ================= */
@@ -833,8 +838,12 @@ function mostraRisolviDiretto(){
     <p class="intro-domanda">Scrivi o incolla qui l'esercizio: il tutor te lo risolve passo per passo. Non serve scegliere l'argomento.</p>
     <div class="mini-form">
       <textarea id="soloTesto" placeholder="Scrivi qui l'esercizio da risolvere..."></textarea>
-      <button class="btn btn-blu" onclick="risolviDiretto('soloTesto')">Risolvi passo per passo</button>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-blu" onclick="risolviDiretto('soloTesto')">Risolvi passo per passo</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('fotoInput').click()">📷 Risolvi da una foto</button>
+      </div>
     </div>
+    <p class="sub" style="margin-top:10px">Suggerimento: puoi anche scattare una foto del libro o dei compiti (anche con più esercizi) e te li risolvo io.</p>
   </div>`;
   window.scrollTo({top:0, behavior:'smooth'});
   const t = document.getElementById('soloTesto'); if(t) t.focus();
@@ -845,6 +854,72 @@ function risolviDiretto(idTextarea){
   if(!testo){ alert("Scrivi prima l'esercizio."); return; }
   stato.temaId = null; stato.temaNome = null;
   risolviTesto(testo, "", "Il tuo esercizio", 'diretto');
+}
+async function risolviDaFoto(inputEl){
+  const file = inputEl.files && inputEl.files[0];
+  inputEl.value = "";
+  if(!file) return;
+  stato.temaId = null; stato.temaNome = null;
+  const area = document.getElementById('workArea');
+  document.getElementById('welcome').style.display = "none";
+  mostraCaricamento(area, "Sto leggendo la foto e risolvendo gli esercizi...");
+  try{
+    const b64 = await fileToImmagineRidotta(file);
+    const messages = [{role:"user", content:[
+      {type:"image", source:{type:"base64", media_type:"image/jpeg", data:b64}},
+      {type:"text", text:
+`Nell'immagine ci sono uno o più esercizi di matematica (spesso con le frazioni). Leggili con attenzione e risolvili passo per passo.
+Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, senza backtick, con questa struttura:
+{ "esercizi": [ {"testo":"il testo dell'esercizio come lo leggi", "risposta":"il risultato finale breve", "passi":[{"titolo":"cosa fai (breve)","calcolo":"la riga di matematica con l'espressione trasformata dopo questo passaggio","contenuto":"breve spiegazione del perché"}]} ] }
+Risolvi al massimo i primi 6 esercizi che vedi. Se un punto ha più sotto-esercizi (a, b, c...), trattali come esercizi separati. Rispetta l'ordine delle operazioni e usa m.c.m., semplificazione a croce e reciproco. Se non riesci a leggere nulla, restituisci {"esercizi": []}.`}
+    ]}];
+    const risposta = await chiamaClaude(messages, SISTEMA_BASE + "\n\n" + GUIDA_STILE, 4000);
+    renderRisultatiFoto(estraiJSON(risposta));
+  }catch(err){ mostraErrore(area, err.message); }
+}
+function fileToImmagineRidotta(file){
+  return new Promise((resolve,reject)=>{
+    if(!file.type || file.type.indexOf('image/')!==0){ reject(new Error("Il file non è un'immagine.")); return; }
+    const reader = new FileReader();
+    reader.onerror = ()=>reject(new Error("Non riesco a leggere il file."));
+    reader.onload = ()=>{
+      const img = new Image();
+      img.onerror = ()=>reject(new Error("Immagine non valida."));
+      img.onload = ()=>{
+        const max = 1600; let w = img.width, h = img.height;
+        if(w>max || h>max){ const s = Math.min(max/w, max/h); w = Math.round(w*s); h = Math.round(h*s); }
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL('image/jpeg', 0.85).split(',')[1]);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+function renderRisultatiFoto(dati){
+  const area = document.getElementById('workArea');
+  document.getElementById('welcome').style.display = "none";
+  const lista = (dati && dati.esercizi) || [];
+  let html = "";
+  lista.forEach(ex=>{
+    html += `
+    <div class="scheda-ex">
+      <div class="exercise-text">${esc(ex.testo)}</div>
+      <div style="font-weight:600;color:var(--verde);margin:6px 0">Risposta: ${esc(ex.risposta)}</div>
+      ${svolgimentoHTML(ex.passi || [], false)}
+    </div>`;
+  });
+  area.innerHTML = `
+  <div class="pagina">
+    <div class="eyebrow">Dalla tua foto</div>
+    <h1 class="topic-title">Esercizi risolti</h1>
+    ${lista.length ? html : '<p class="vuoto">Non ho trovato esercizi nella foto. Prova con una foto più nitida, ben inquadrata e ravvicinata.</p>'}
+    <div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn btn-blu" onclick="mostraRisolviDiretto()">➜ Risolvi un altro</button>
+    </div>
+  </div>`;
+  window.scrollTo({top:0, behavior:'smooth'});
 }
 
 /* ================= ESERCIZI PERSONALI ================= */
