@@ -287,7 +287,8 @@ h1.topic-title{
           <textarea id="welcomeSolverTesto" placeholder="Scrivi o incolla qui l'esercizio..."></textarea>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             <button class="btn btn-blu btn-piccolo" onclick="risolviDiretto('welcomeSolverTesto')">Risolvi passo per passo</button>
-            <button class="btn btn-ghost btn-piccolo" onclick="document.getElementById('fotoInput').click()">📷 Risolvi da una foto</button>
+            <button class="btn btn-ghost btn-piccolo" onclick="document.getElementById('fotoCamera').click()">📷 Scatta una foto</button>
+            <button class="btn btn-ghost btn-piccolo" onclick="document.getElementById('fotoGalleria').click()">🖼️ Carica una foto</button>
           </div>
         </div>
       </div>
@@ -335,7 +336,8 @@ h1.topic-title{
   </div>
 </div>
 
-<input type="file" id="fotoInput" accept="image/*" capture="environment" style="display:none" onchange="risolviDaFoto(this)">
+<input type="file" id="fotoCamera" accept="image/*" capture="environment" style="display:none" onchange="risolviDaFoto(this)">
+<input type="file" id="fotoGalleria" accept="image/*" style="display:none" onchange="risolviDaFoto(this)">
 
 <script>
 /* ================= PROGRAMMA ================= */
@@ -840,7 +842,8 @@ function mostraRisolviDiretto(){
       <textarea id="soloTesto" placeholder="Scrivi qui l'esercizio da risolvere..."></textarea>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <button class="btn btn-blu" onclick="risolviDiretto('soloTesto')">Risolvi passo per passo</button>
-        <button class="btn btn-ghost" onclick="document.getElementById('fotoInput').click()">📷 Risolvi da una foto</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('fotoCamera').click()">📷 Scatta una foto</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('fotoGalleria').click()">🖼️ Carica una foto</button>
       </div>
     </div>
     <p class="sub" style="margin-top:10px">Suggerimento: puoi anche scattare una foto del libro o dei compiti (anche con più esercizi) e te li risolvo io.</p>
